@@ -11,6 +11,7 @@ import loadPlugins from './loadPlugins';
 
 export default new Transformer({
   async loadConfig({config, options}) {
+    let isReload = config.result !== null;
     let configResult = await config.getConfig(
       ['.posthtmlrc', '.posthtmlrc.js', 'posthtml.config.js'],
       options
@@ -18,20 +19,25 @@ export default new Transformer({
 
     configResult = configResult || {};
     configResult.skipParse = true;
+    let plugins = configResult.plugins || [];
 
-    // if (canSerializeConfig(config)) {
-    //   config.shouldReload();
-    //   config.setResult({
-    //     internal: false
-    //   });
-    //   config.setResultHash(JSON.stringify(Date.now()));
-    // }
-
-    if (configResult.plugins) {
+    if (plugins.length) {
       config.shouldRehydrate();
     }
 
+    console.log({isReload});
     config.setResult(configResult);
+
+    if (
+      !isReload &&
+      !configResult.plugins.every(plugin => typeof plugin === 'string')
+    ) {
+      // cannot be serialized, set it load on each worker
+      config.shouldReload();
+      // todo: do something indicate we are on reload
+      config.setResult({isReload: true});
+      config.setResultHash(JSON.stringify(Date.now()));
+    }
   },
 
   async rehydrateConfig({config, options}) {
@@ -54,6 +60,8 @@ export default new Transformer({
     if (!config) {
       return;
     }
+
+    console.log(config);
 
     return {
       type: 'posthtml',
