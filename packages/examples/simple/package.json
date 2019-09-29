@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@parcel/babel-register": "^2.0.0-alpha.1.1",
-    "@parcel/core": "^2.0.0-alpha.1.1"
+    "parcel": "^2.0.0-alpha.1.1"
   },
   "browser": "dist/legacy/index.js",
   "browserModern": "dist/modern/index.js",
