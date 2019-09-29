@@ -4,10 +4,11 @@ import type {PackageJSON, FilePath, ModuleSpecifier} from '@parcel/types';
 import type {ResolveOptions} from 'resolve';
 import type {FileSystem} from '@parcel/fs';
 
+import path from 'path';
+import _resolve from 'resolve';
+import {findPackageFolder} from '@parcel/utils';
 // $FlowFixMe TODO: Type promisify
 import promisify from './promisify';
-import _resolve from 'resolve';
-import path from 'path';
 
 const resolveAsync = promisify(_resolve);
 
@@ -16,14 +17,14 @@ export type ResolveResult = {|
   pkg?: ?PackageJSON
 |};
 
-async function loadPackage(fs, dir: string) {
-  if (await fs.exists(path.join(dir, 'package.json'))) {
+async function loadPackage(fs, from: string) {
+  let dir = await findPackageFolder(fs, from);
+  if (dir != null)
     return JSON.parse(
       await fs.readFile(path.join(dir, 'package.json'), 'utf8')
     );
-  } else {
-    return loadPackage(fs, path.dirname(dir));
-  }
+
+  return null;
 }
 
 export async function resolve(

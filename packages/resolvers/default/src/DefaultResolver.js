@@ -9,7 +9,7 @@ import type {
   ResolveResult
 } from '@parcel/types';
 import path from 'path';
-import {isGlob} from '@parcel/utils';
+import {isGlob, findPackageFolder} from '@parcel/utils';
 import micromatch from 'micromatch';
 import builtins from './builtins';
 // import nodeBuiltins from 'node-libs-browser';
@@ -532,18 +532,9 @@ class NodeResolver {
     return typeof alias === 'string' ? alias : null;
   }
 
-  async findPackage(dir: string) {
-    // Find the nearest package.json file within the current node_modules folder
-    let root = path.parse(dir).root;
-    while (dir !== root && path.basename(dir) !== 'node_modules') {
-      try {
-        return await this.readPackage(dir);
-      } catch (err) {
-        // ignore
-      }
-
-      dir = path.dirname(dir);
-    }
+  async findPackage(from: string) {
+    let dir = await findPackageFolder(this.options.inputFS, from);
+    if (dir) return this.readPackage(dir);
 
     return null;
   }

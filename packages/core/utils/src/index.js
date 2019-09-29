@@ -6,6 +6,7 @@ export type * from './prettyError';
 
 export {default as countLines} from './countLines';
 export {default as DefaultMap} from './DefaultMap';
+export {default as findPackageFolder} from './findPackageFolder';
 export {default as generateBundleReport} from './generateBundleReport';
 export {default as generateCertificate} from './generateCertificate';
 export {default as getCertificate} from './getCertificate';
