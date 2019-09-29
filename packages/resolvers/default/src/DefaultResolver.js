@@ -132,7 +132,18 @@ class NodeResolver {
     // Resolve the module directory or local file path
     let module = await this.resolveModule(filename, parent, isURL);
 
-    if (module.moduleDir) {
+    if (module.moduleName && process.versions.pnp != null) {
+      return this.loadRelative(
+        path.join(
+          // $FlowFixMe - injected" at runtime
+          require('pnpapi').resolveToUnqualified(module.moduleName, parent, {
+            considerBuiltins: true
+          }),
+          module.subPath || ''
+        ),
+        extensions
+      );
+    } else if (module.moduleDir) {
       return this.loadNodeModules(module, extensions);
     } else if (module.filePath) {
       return this.loadRelative(module.filePath, extensions);
@@ -161,10 +172,12 @@ class NodeResolver {
 
     // Resolve the module in node_modules
     let resolved;
-    try {
-      resolved = await this.findNodeModulePath(filename, dir);
-    } catch (err) {
-      // ignore
+    if (!process.versions.pnp) {
+      try {
+        resolved = await this.findNodeModulePath(filename, dir);
+      } catch (err) {
+        // ignore
+      }
     }
 
     // If we couldn't resolve the node_modules path, just return the module name info
