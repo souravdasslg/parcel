@@ -1,6 +1,6 @@
 import * as React from 'react';
 import ReactDOM from 'react-dom';
-
+// console.log('foo');
 console.log({hot: module.hot});
 
 if (module.hot) {
@@ -14,3 +14,6 @@ if (module.hot) {
 }
 
 ReactDOM.render(<div>Hello world!</div>, document.getElementById('app'));
+
+//
+//
