@@ -36,7 +36,6 @@ type Opts = {|
 export default class AssetGraphBuilder extends EventEmitter {
   assetGraph: AssetGraph;
   requestGraph: RequestGraph;
-  controller: AbortController;
   changedAssets: Map<string, Asset> = new Map();
   options: ParcelOptions;
   cacheKey: string;

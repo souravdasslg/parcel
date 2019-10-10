@@ -11,6 +11,7 @@ import type {
 } from '@parcel/types';
 import type {ParcelOptions} from './types';
 import type {FarmOptions} from '@parcel/workers';
+import type {AbortSignal} from 'abortcontroller-polyfill/dist/cjs-ponyfill';
 
 import invariant from 'assert';
 import {createDependency} from './Dependency';
@@ -30,6 +31,7 @@ import resolveOptions from './resolveOptions';
 import {ValueEmitter} from '@parcel/events';
 import registerCoreWithSerializer from './registerCoreWithSerializer';
 import {createCacheDir} from '@parcel/cache';
+import {AbortController} from 'abortcontroller-polyfill/dist/cjs-ponyfill';
 
 registerCoreWithSerializer();
 
@@ -48,6 +50,8 @@ export default class Parcel {
   #reporterRunner; // ReporterRunner
   #resolvedOptions = null; // ?ParcelOptions
   #runPackage; // (bundle: IBundle, bundleGraph: InternalBundleGraph) => Promise<Stats>;
+  #watchAbortController; // AbortController
+  #watchPriorPromise; // Promise<BuildEvent>
   #watchEvents = new ValueEmitter<
     | {
         +error: Error,
@@ -136,7 +140,7 @@ export default class Parcel {
       await this.init();
     }
 
-    let result = await this.build(startTime);
+    let result = await this.build({startTime});
     await Promise.all([
       this.#assetGraphBuilder.writeToCache(),
       this.#runtimesAssetGraphBuilder.writeToCache()
@@ -174,13 +178,18 @@ export default class Parcel {
 
       // Kick off a first build, but don't await its results. Its results will
       // be provided to the callback.
-      this.build()
+      this.#watchAbortController = new AbortController();
+      this.#watchPriorPromise = this.build({
+        signal: this.#watchAbortController.signal
+      })
         .then(buildEvent => {
           this.#watchEvents.emit({buildEvent});
         })
         .catch(error => {
           // Ignore BuildAbortErrors and only emit critical errors.
-          this.#watchEvents.emit({error});
+          if (!(error instanceof BuildAbortError)) {
+            this.#watchEvents.emit({error});
+          }
         });
     }
 
@@ -206,7 +215,13 @@ export default class Parcel {
     };
   }
 
-  async build(startTime: number = Date.now()): Promise<BuildEvent> {
+  async build({
+    signal,
+    startTime = Date.now()
+  }: {|
+    signal?: AbortSignal,
+    startTime?: number
+  |}): Promise<BuildEvent> {
     let options = nullthrows(this.#resolvedOptions);
     try {
       if (options.profile) {
@@ -312,6 +327,7 @@ export default class Parcel {
     return resolvedOptions.inputFS.watch(
       resolvedOptions.projectRoot,
       async (err, events) => {
+        debugger;
         if (err) {
           this.#watchEvents.emit({error: err});
           return;
@@ -319,15 +335,45 @@ export default class Parcel {
 
         let isInvalid = this.#assetGraphBuilder.respondToFSEvents(events);
         if (isInvalid) {
-          try {
-            this.#watchEvents.emit({
-              buildEvent: await this.build()
+          console.log('was invalid');
+          this.#watchAbortController.abort();
+          let abortController = new AbortController();
+          this.#watchAbortController = abortController;
+
+          console.log('aborted prior controller', this.#watchPriorPromise);
+          this.#watchPriorPromise.then(b => {
+            console.log('hey it resolved', b);
+          });
+
+          this.#watchPriorPromise = this.#watchPriorPromise
+            .then(() => {
+              console.log('prior promise resolved. building...');
+              // See if another build has cancelled ours while waiting for the last one.
+              if (abortController.signal.aborted) {
+                throw new BuildAbortError();
+              }
+
+              return this.build({
+                signal: this.#watchAbortController.signal
+              });
+            })
+            .catch(err => {
+              // Ignore BuildAbortErrors and only emit critical errors.
+              if (!(err instanceof BuildAbortError)) {
+                throw err;
+              }
+            })
+            .then(b => {
+              console.log('finally done building');
+              return b;
             });
-          } catch (error) {
-            // Ignore BuildAbortErrors and only emit critical errors.
-            if (!(err instanceof BuildAbortError)) {
-              this.#watchEvents.emit({error});
-            }
+
+          let buildEvent = await this.#watchPriorPromise;
+          if (buildEvent) {
+            console.log('built. emitting...');
+            this.#watchEvents.emit({
+              buildEvent
+            });
           }
         }
       },
