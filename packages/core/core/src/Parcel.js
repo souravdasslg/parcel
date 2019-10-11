@@ -338,7 +338,6 @@ export default class Parcel {
     return resolvedOptions.inputFS.watch(
       resolvedOptions.projectRoot,
       (err, _events) => {
-        console.log('queue size', this.#watchQueue._queue.length);
         let events = _events.filter(e => !e.path.includes('.cache'));
 
         if (err) {
@@ -347,12 +346,11 @@ export default class Parcel {
         }
 
         let isInvalid = this.#assetGraphBuilder.respondToFSEvents(events);
-        if (isInvalid && this.#watchQueue._queue.length < 1) {
+        if (isInvalid && this.#watchQueue._queue.length === 0) {
           if (this.#watchAbortController) {
             this.#watchAbortController.abort();
           }
 
-          console.log('adding to queue');
           this.#watchQueue.add(() => this.startNextBuild());
           this.#watchQueue.run();
         }
