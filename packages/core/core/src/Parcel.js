@@ -32,6 +32,7 @@ import {ValueEmitter} from '@parcel/events';
 import registerCoreWithSerializer from './registerCoreWithSerializer';
 import {createCacheDir} from '@parcel/cache';
 import {AbortController} from 'abortcontroller-polyfill/dist/cjs-ponyfill';
+import {PromiseQueue} from '@parcel/utils';
 
 registerCoreWithSerializer();
 
@@ -51,7 +52,7 @@ export default class Parcel {
   #resolvedOptions = null; // ?ParcelOptions
   #runPackage; // (bundle: IBundle, bundleGraph: InternalBundleGraph) => Promise<Stats>;
   #watchAbortController; // AbortController
-  #watchPriorPromise; // Promise<BuildEvent>
+  #watchQueue = new PromiseQueue<?BuildEvent>({maxConcurrent: 1}); // PromiseQueue<?BuildEvent>
   #watchEvents = new ValueEmitter<
     | {
         +error: Error,
@@ -158,6 +159,27 @@ export default class Parcel {
     return result.bundleGraph;
   }
 
+  async startNextBuild() {
+    let abortController = new AbortController();
+    this.#watchAbortController = abortController;
+
+    try {
+      let buildEvent = await this.build({
+        signal: abortController.signal
+      });
+      if (buildEvent) {
+        this.#watchEvents.emit({
+          buildEvent
+        });
+      }
+    } catch (err) {
+      // Ignore BuildAbortErrors and only emit critical errors.
+      if (!(err instanceof BuildAbortError)) {
+        throw err;
+      }
+    }
+  }
+
   async watch(
     cb?: (err: ?Error, buildEvent?: BuildEvent) => mixed
   ): Promise<AsyncSubscription> {
@@ -178,19 +200,8 @@ export default class Parcel {
 
       // Kick off a first build, but don't await its results. Its results will
       // be provided to the callback.
-      this.#watchAbortController = new AbortController();
-      this.#watchPriorPromise = this.build({
-        signal: this.#watchAbortController.signal
-      })
-        .then(buildEvent => {
-          this.#watchEvents.emit({buildEvent});
-        })
-        .catch(error => {
-          // Ignore BuildAbortErrors and only emit critical errors.
-          if (!(error instanceof BuildAbortError)) {
-            this.#watchEvents.emit({error});
-          }
-        });
+      this.#watchQueue.add(() => this.startNextBuild());
+      this.#watchQueue.run();
     }
 
     this.#watcherCount++;
@@ -326,55 +337,24 @@ export default class Parcel {
 
     return resolvedOptions.inputFS.watch(
       resolvedOptions.projectRoot,
-      async (err, events) => {
-        debugger;
+      (err, _events) => {
+        console.log('queue size', this.#watchQueue._queue.length);
+        let events = _events.filter(e => !e.path.includes('.cache'));
+
         if (err) {
           this.#watchEvents.emit({error: err});
           return;
         }
 
         let isInvalid = this.#assetGraphBuilder.respondToFSEvents(events);
-        if (isInvalid) {
-          console.log('was invalid');
-          this.#watchAbortController.abort();
-          let abortController = new AbortController();
-          this.#watchAbortController = abortController;
-
-          console.log('aborted prior controller', this.#watchPriorPromise);
-          this.#watchPriorPromise.then(b => {
-            console.log('hey it resolved', b);
-          });
-
-          this.#watchPriorPromise = this.#watchPriorPromise
-            .then(() => {
-              console.log('prior promise resolved. building...');
-              // See if another build has cancelled ours while waiting for the last one.
-              if (abortController.signal.aborted) {
-                throw new BuildAbortError();
-              }
-
-              return this.build({
-                signal: this.#watchAbortController.signal
-              });
-            })
-            .catch(err => {
-              // Ignore BuildAbortErrors and only emit critical errors.
-              if (!(err instanceof BuildAbortError)) {
-                throw err;
-              }
-            })
-            .then(b => {
-              console.log('finally done building');
-              return b;
-            });
-
-          let buildEvent = await this.#watchPriorPromise;
-          if (buildEvent) {
-            console.log('built. emitting...');
-            this.#watchEvents.emit({
-              buildEvent
-            });
+        if (isInvalid && this.#watchQueue._queue.length < 1) {
+          if (this.#watchAbortController) {
+            this.#watchAbortController.abort();
           }
+
+          console.log('adding to queue');
+          this.#watchQueue.add(() => this.startNextBuild());
+          this.#watchQueue.run();
         }
       },
       opts
