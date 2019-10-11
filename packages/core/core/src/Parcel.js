@@ -160,18 +160,14 @@ export default class Parcel {
   }
 
   async startNextBuild() {
-    let abortController = new AbortController();
-    this.#watchAbortController = abortController;
+    this.#watchAbortController = new AbortController();
 
     try {
-      let buildEvent = await this.build({
-        signal: abortController.signal
+      this.#watchEvents.emit({
+        buildEvent: await this.build({
+          signal: this.#watchAbortController.signal
+        })
       });
-      if (buildEvent) {
-        this.#watchEvents.emit({
-          buildEvent
-        });
-      }
     } catch (err) {
       // Ignore BuildAbortErrors and only emit critical errors.
       if (!(err instanceof BuildAbortError)) {
