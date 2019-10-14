@@ -246,8 +246,32 @@ export default class Graph<TNode: Node, TEdgeType: string | null = null> {
   isOrphanedNode(node: TNode): boolean {
     assertHasNode(this, node);
 
-    for (let [, typeMap] of this.inboundEdges.get(node.id)) {
-      if (typeMap.size !== 0) {
+    for (let [type, connectedNodes] of this.inboundEdges.get(node.id)) {
+      if (connectedNodes.size === 0) {
+        continue;
+      }
+
+      // Check to see if every inbound edge forms a cycle. If they all do,
+      // then this node is also considered orphaned as its inbound paths
+      // all originate from itself.
+      if (
+        ![...connectedNodes].every(parentId => {
+          let cycles = false;
+
+          this.traverseAncestors(
+            nullthrows(this.getNode(parentId)),
+            (ancestor, _, actions) => {
+              if (ancestor.id === node.id) {
+                cycles = true;
+                actions.stop();
+              }
+            },
+            type
+          );
+
+          return cycles;
+        })
+      ) {
         return false;
       }
     }
