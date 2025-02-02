@@ -43,12 +43,15 @@ module.exports.init = function () {
     };
 
     if (typeof window !== 'undefined') {
-      let ErrorOverlay = require('react-error-overlay');
+      let ErrorOverlay = require('@parcel/error-overlay');
       ErrorOverlay.setEditorHandler(function editorHandler(errorLocation) {
         let file = `${errorLocation.fileName}:${
           errorLocation.lineNumber || 1
         }:${errorLocation.colNumber || 1}`;
-        fetch(`/__parcel_launch_editor?file=${encodeURIComponent(file)}`);
+        fetch(
+          import.meta.devServer +
+            `/__parcel_launch_editor?file=${encodeURIComponent(file)}`,
+        );
       });
 
       ErrorOverlay.startReportingRuntimeErrors({
