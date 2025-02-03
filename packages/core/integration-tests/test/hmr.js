@@ -11,6 +11,7 @@ import {
   sleep,
   run,
   request,
+  distDir,
 } from '@parcel/test-utils';
 import WebSocket from 'ws';
 import json5 from 'json5';
@@ -18,6 +19,9 @@ import getPort from 'get-port';
 // flowlint-next-line untyped-import:off
 import JSDOM from 'jsdom';
 import nullthrows from 'nullthrows';
+import {pathToFileURL} from 'url';
+import {normalizeSeparators} from '@parcel/utils';
+import SourceMap from '@parcel/source-map';
 
 const config = path.join(
   __dirname,
@@ -189,7 +193,7 @@ describe('hmr', function () {
 
       assert.equal(message.type, 'update');
 
-      assert.equal(message.assets.length, 2);
+      assert.equal(message.assets.length, 1);
     });
 
     it('should emit an HMR error on bundle failure', async function () {
@@ -360,6 +364,276 @@ describe('hmr', function () {
       assert(contents.includes('//# sourceMappingURL'));
       assert(contents.includes('//# sourceURL'));
     });
+
+    describe('source maps', function () {
+      let port, bundleGraph;
+      async function setup(publicUrl) {
+        port = await getPort();
+        let b = bundler(path.join(__dirname, '/input/index.js'), {
+          serveOptions: {port, publicUrl},
+          hmrOptions: {port},
+          inputFS: overlayFS,
+          config,
+        });
+
+        subscription = await b.watch();
+        let event = await getNextBuild(b);
+        bundleGraph = nullthrows(event.bundleGraph);
+      }
+
+      it('should return source maps by absolute bundle path', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          normalizeSeparators(bundleGraph.getBundles()[0].filePath),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps by relative bundle path', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          normalizeSeparators(
+            path.relative(distDir, bundleGraph.getBundles()[0].filePath),
+          ),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps by file url', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          pathToFileURL(bundleGraph.getBundles()[0].filePath).toString(),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps by fully qualified bundle URL', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          'http://localhost:1234/' +
+            normalizeSeparators(
+              path.relative(distDir, bundleGraph.getBundles()[0].filePath),
+            ),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps by with fully qualified public URL', async function () {
+        await setup('http://localhost:1234/static/');
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          'http://localhost:1234/static/' +
+            normalizeSeparators(
+              path.relative(distDir, bundleGraph.getBundles()[0].filePath),
+            ),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps by with relative public url', async function () {
+        await setup('/static');
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          '/static/' +
+            normalizeSeparators(
+              path.relative(distDir, bundleGraph.getBundles()[0].filePath),
+            ),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps by with RSC file URL', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          'rsc://React/Server/' +
+            pathToFileURL(bundleGraph.getBundles()[0].filePath).toString(),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert.equal(
+          contents,
+          await outputFS.readFile(
+            bundleGraph.getBundles()[0].filePath + '.map',
+            'utf8',
+          ),
+        );
+      });
+
+      it('should return source maps for an asset by id', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          '/__parcel_hmr/' +
+            nullthrows(bundleGraph.getBundles()[0].getMainEntry()).id,
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert(contents.startsWith('{"mappings"'));
+      });
+
+      it('should return source maps for an asset by file path', async function () {
+        await setup();
+        let qs = new URLSearchParams();
+        qs.set(
+          'filename',
+          pathToFileURL(
+            nullthrows(bundleGraph.getBundles()[0].getMainEntry()).filePath,
+          ).toString(),
+        );
+        let contents = await request(
+          '/__parcel_source_map?' + qs.toString(),
+          port,
+        );
+        assert(contents.startsWith('{"mappings"'));
+      });
+    });
+
+    describe('code frame', function () {
+      let port, bundleGraph;
+      beforeEach(async function () {
+        port = await getPort();
+        let b = bundler(path.join(__dirname, '/input/index.js'), {
+          serveOptions: {port},
+          hmrOptions: {port},
+          inputFS: overlayFS,
+          config,
+        });
+
+        subscription = await b.watch();
+        let event = await getNextBuild(b);
+        bundleGraph = nullthrows(event.bundleGraph);
+      });
+
+      it('should return code frames for stack', async function () {
+        let map = new SourceMap('/');
+        map.addVLQMap(
+          JSON.parse(
+            await outputFS.readFile(
+              bundleGraph.getBundles()[0].filePath + '.map',
+              'utf8',
+            ),
+          ),
+        );
+        let source = map.getSourceIndex('input/index.js');
+        let mappings = map.getMappings();
+        let mapping = nullthrows(
+          mappings.find(m => m.source === source && m.original?.line === 6),
+        );
+
+        let res = await fetch(
+          'http://localhost:' + port + '/__parcel_code_frame',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contextLines: 3,
+              frames: [
+                {
+                  fileName: normalizeSeparators(
+                    bundleGraph.getBundles()[0].filePath,
+                  ),
+                  lineNumber: mapping.generated.line,
+                  columnNumber: mapping.generated.column,
+                },
+              ],
+            }),
+          },
+        );
+
+        let json = await res.json();
+        assert.deepEqual(json, [
+          {
+            fileName: '../dist/index.js',
+            lineNumber: mapping.generated.line,
+            columnNumber: mapping.generated.column,
+            sourceFileName: 'input/index.js',
+            sourceLineNumber: mapping.original?.line,
+            sourceColumnNumber: mapping.original?.column,
+            compiledLines: json[0].compiledLines,
+            sourceLines: json[0].sourceLines,
+          },
+        ]);
+      });
+    });
   });
 
   // TODO: add test for 4532 (`require` call in modified asset in child bundle where HMR runtime runs in parent bundle)
@@ -447,10 +721,10 @@ module.hot.dispose((data) => {
         ['eval:local', 1, null],
         ['eval:index', 1, null],
         ['dispose:other', 1],
-        ['eval:other', 3, {value: 1}],
         ['dispose:local', 1],
-        ['eval:local', 3, {value: 1}],
         ['dispose:index', 1],
+        ['eval:other', 3, {value: 1}],
+        ['eval:local', 3, {value: 1}],
         ['eval:index', 3, {value: 1}],
       ]);
     });
@@ -516,15 +790,64 @@ module.hot.dispose((data) => {
     });
 
     it('should work across bundles', async function () {
-      let {reloaded} = await testHMRClient('hmr-dynamic', outputs => {
+      let {reloaded, outputs} = await testHMRClient('hmr-dynamic', outputs => {
         assert.deepEqual(outputs, [3]);
         return {
           'local.js': 'exports.a = 5; exports.b = 5;',
         };
       });
 
-      // assert.deepEqual(outputs, [3, 10]);
-      assert(reloaded); // TODO: this should eventually not reload...
+      assert.deepEqual(outputs, [3, 10]);
+      assert(!reloaded);
+    });
+
+    it('should work when an asset is duplicated', async function () {
+      let {reloaded, outputs} = await testHMRClient(
+        'hmr-duplicate',
+        outputs => {
+          assert.deepEqual(outputs, [7]);
+          return {
+            'shared.js': 'exports.a = 5;',
+          };
+        },
+      );
+
+      assert.deepEqual(outputs, [7, 13]);
+      assert(!reloaded);
+    });
+
+    it('should bubble to parents if child returns additional parents', async function () {
+      let {reloaded, outputs} = await testHMRClient('hmr-parents', outputs => {
+        assert.deepEqual(outputs, ['child 2', 'root']);
+        return {
+          'updated.js': 'exports.a = 3;',
+        };
+      });
+
+      assert.deepEqual(outputs, [
+        'child 2',
+        'root',
+        'child 3',
+        'accept child',
+        'root',
+        'accept root',
+      ]);
+      assert(!reloaded);
+    });
+
+    it('should bubble to parents and reload if they do not accept', async function () {
+      let {reloaded, outputs} = await testHMRClient(
+        'hmr-parents-reload',
+        outputs => {
+          assert.deepEqual(outputs, ['child 2', 'root']);
+          return {
+            'updated.js': 'exports.a = 3;',
+          };
+        },
+      );
+
+      assert.deepEqual(outputs, []);
+      assert(reloaded);
     });
 
     it('should work with urls', async function () {
@@ -879,6 +1202,14 @@ module.hot.dispose((data) => {
       let bundleEvent = await getNextBuild(b);
       assert.equal(bundleEvent.type, 'buildSuccess');
 
+      // JSDOM doesn't support type=module
+      // https://github.com/jsdom/jsdom/issues/2475
+      let htmlPath = nullthrows(bundleEvent.bundleGraph).getBundles()[0]
+        .filePath;
+      let html = await outputFS.readFile(htmlPath, 'utf8');
+      html = html.replace(/type="module"/g, '');
+      await outputFS.writeFile(htmlPath, html);
+
       let window;
       try {
         let dom = await JSDOM.JSDOM.fromURL(
@@ -941,6 +1272,14 @@ module.hot.dispose((data) => {
       subscription = await b.watch();
       let bundleEvent = await getNextBuild(b);
       assert.equal(bundleEvent.type, 'buildSuccess');
+
+      // JSDOM doesn't support type=module
+      // https://github.com/jsdom/jsdom/issues/2475
+      let htmlPath = nullthrows(bundleEvent.bundleGraph).getBundles()[0]
+        .filePath;
+      let html = await outputFS.readFile(htmlPath, 'utf8');
+      html = html.replace(/type="module"/g, '');
+      await outputFS.writeFile(htmlPath, html);
 
       let window;
       try {

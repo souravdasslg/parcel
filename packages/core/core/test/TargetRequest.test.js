@@ -73,6 +73,7 @@ describe('TargetResolver', () => {
   let api = {
     invalidateOnFileCreate() {},
     invalidateOnFileUpdate() {},
+    invalidateOnConfigKeyChange() {},
     invalidateOnFileDelete() {},
     invalidateOnEnvChange() {},
     invalidateOnOptionChange() {},
@@ -91,6 +92,9 @@ describe('TargetResolver', () => {
     getPreviousResult() {},
     getRequestResult() {},
     getSubRequests() {
+      return [];
+    },
+    getInvalidSubRequests() {
       return [];
     },
   };
@@ -196,7 +200,7 @@ describe('TargetResolver', () => {
               line: 2,
             },
             end: {
-              column: 30,
+              column: 31,
               line: 2,
             },
           },
@@ -232,7 +236,7 @@ describe('TargetResolver', () => {
               line: 3,
             },
             end: {
-              column: 34,
+              column: 35,
               line: 3,
             },
           },
@@ -266,7 +270,7 @@ describe('TargetResolver', () => {
               line: 4,
             },
             end: {
-              column: 36,
+              column: 37,
               line: 4,
             },
           },
@@ -312,7 +316,7 @@ describe('TargetResolver', () => {
               line: 3,
             },
             end: {
-              column: 24,
+              column: 25,
               line: 3,
             },
           },
@@ -355,7 +359,7 @@ describe('TargetResolver', () => {
               line: 2,
             },
             end: {
-              column: 30,
+              column: 31,
               line: 2,
             },
           },
@@ -389,7 +393,7 @@ describe('TargetResolver', () => {
               line: 3,
             },
             end: {
-              column: 48,
+              column: 49,
               line: 3,
             },
           },
@@ -423,7 +427,7 @@ describe('TargetResolver', () => {
               line: 4,
             },
             end: {
-              column: 48,
+              column: 49,
               line: 4,
             },
           },
@@ -474,7 +478,7 @@ describe('TargetResolver', () => {
               line: 2,
             },
             end: {
-              column: 30,
+              column: 31,
               line: 2,
             },
           },
@@ -508,7 +512,7 @@ describe('TargetResolver', () => {
               line: 3,
             },
             end: {
-              column: 48,
+              column: 49,
               line: 3,
             },
           },
@@ -542,7 +546,7 @@ describe('TargetResolver', () => {
               line: 4,
             },
             end: {
-              column: 48,
+              column: 49,
               line: 4,
             },
           },
@@ -576,7 +580,19 @@ describe('TargetResolver', () => {
             loc: undefined,
             sourceType: 'module',
           },
-          loc: undefined,
+          loc: {
+            filePath: relative(
+              path.join(CUSTOM_TARGETS_DISTDIR_FIXTURE_PATH, 'package.json'),
+            ),
+            start: {
+              line: 3,
+              column: 5,
+            },
+            end: {
+              line: 3,
+              column: 10,
+            },
+          },
         },
       ],
     );
@@ -669,14 +685,15 @@ describe('TargetResolver', () => {
 
   it('resolves main target with context from package.json', async () => {
     let targetResolver = new TargetResolver(api, DEFAULT_OPTIONS);
-    assert.deepEqual(await targetResolver.resolve(CONTEXT_FIXTURE_PATH), [
+    let res = await targetResolver.resolve(CONTEXT_FIXTURE_PATH);
+    assert.deepEqual(res, [
       {
         name: 'main',
         distDir: 'fixtures/context/dist/main',
         distEntry: 'index.js',
         publicUrl: '/',
         env: {
-          id: '6aafdb9eaa4a3812',
+          id: res[0].env.id,
           context: 'node',
           engines: {
             browsers: [
@@ -685,6 +702,7 @@ describe('TargetResolver', () => {
               'last 1 Firefox version',
               'last 1 Edge version',
             ],
+            node: process.versions.node,
           },
           includeNodeModules: false,
           isLibrary: true,
@@ -702,7 +720,7 @@ describe('TargetResolver', () => {
             line: 2,
           },
           end: {
-            column: 30,
+            column: 31,
             line: 2,
           },
         },
@@ -1080,7 +1098,7 @@ describe('TargetResolver', () => {
             line: 2,
           },
           end: {
-            column: 26,
+            column: 27,
             line: 2,
           },
         },
@@ -1125,7 +1143,7 @@ describe('TargetResolver', () => {
             line: 3,
           },
           end: {
-            column: 25,
+            column: 26,
             line: 3,
           },
         },
@@ -1171,7 +1189,7 @@ describe('TargetResolver', () => {
               line: 2,
             },
             end: {
-              column: 30,
+              column: 31,
               line: 2,
             },
           },
@@ -1205,7 +1223,7 @@ describe('TargetResolver', () => {
               line: 4,
             },
             end: {
-              column: 36,
+              column: 37,
               line: 4,
             },
           },
@@ -1314,7 +1332,19 @@ describe('TargetResolver', () => {
             loc: undefined,
             sourceType: 'module',
           },
-          loc: undefined,
+          loc: {
+            filePath: relative(
+              path.join(DEFAULT_DISTPATH_FIXTURE_PATHS.one, 'package.json'),
+            ),
+            start: {
+              line: 3,
+              column: 5,
+            },
+            end: {
+              line: 3,
+              column: 20,
+            },
+          },
         },
       ],
     );
@@ -1352,7 +1382,19 @@ describe('TargetResolver', () => {
             loc: undefined,
             sourceType: 'module',
           },
-          loc: undefined,
+          loc: {
+            filePath: relative(
+              path.join(DEFAULT_DISTPATH_FIXTURE_PATHS.two, 'package.json'),
+            ),
+            start: {
+              line: 3,
+              column: 5,
+            },
+            end: {
+              line: 3,
+              column: 20,
+            },
+          },
         },
         {
           name: 'browserLegacy',
@@ -1380,7 +1422,19 @@ describe('TargetResolver', () => {
             loc: undefined,
             sourceType: 'module',
           },
-          loc: undefined,
+          loc: {
+            filePath: relative(
+              path.join(DEFAULT_DISTPATH_FIXTURE_PATHS.two, 'package.json'),
+            ),
+            start: {
+              line: 10,
+              column: 5,
+            },
+            end: {
+              line: 10,
+              column: 20,
+            },
+          },
         },
       ],
     );

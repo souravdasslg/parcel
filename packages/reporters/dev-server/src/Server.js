@@ -18,7 +18,8 @@ import url from 'url';
 import {
   ansiHtml,
   createHTTPServer,
-  loadConfig,
+  resolveConfig,
+  readConfig,
   prettyDiagnostic,
   relativePath,
 } from '@parcel/utils';
@@ -28,8 +29,7 @@ import ejs from 'ejs';
 import connect from 'connect';
 import serveHandler from 'serve-handler';
 import {createProxyMiddleware} from 'http-proxy-middleware';
-import {URL, URLSearchParams} from 'url';
-import launchEditor from 'launch-editor';
+import {URL} from 'url';
 import fresh from 'fresh';
 
 export function setHeaders(res: Response) {
@@ -45,8 +45,9 @@ export function setHeaders(res: Response) {
   res.setHeader('Cache-Control', 'max-age=0, must-revalidate');
 }
 
+const SLASH_REGEX = /\//g;
+
 export const SOURCES_ENDPOINT = '/__parcel_source_root';
-const EDITOR_ENDPOINT = '/__parcel_launch_editor';
 const TEMPLATE_404 = fs.readFileSync(
   path.join(__dirname, 'templates/404.html'),
   'utf8',
@@ -134,23 +135,12 @@ export default class Server {
 
   respond(req: Request, res: Response): mixed {
     if (this.middleware.some(handler => handler(req, res))) return;
-    let {pathname, search} = url.parse(req.originalUrl || req.url);
+    let {pathname} = url.parse(req.originalUrl || req.url);
     if (pathname == null) {
       pathname = '/';
     }
 
-    if (pathname.startsWith(EDITOR_ENDPOINT) && search) {
-      let query = new URLSearchParams(search);
-      let file = query.get('file');
-      if (file) {
-        // File location might start with /__parcel_source_root if it came from a source map.
-        if (file.startsWith(SOURCES_ENDPOINT)) {
-          file = file.slice(SOURCES_ENDPOINT.length + 1);
-        }
-        launchEditor(file);
-      }
-      res.end();
-    } else if (this.errors) {
+    if (this.errors) {
       return this.send500(req, res);
     } else if (path.extname(pathname) === '') {
       // If the URL doesn't start with the public path, or the URL doesn't
@@ -183,7 +173,7 @@ export default class Server {
       // If the main asset is an HTML file, serve it
       let htmlBundleFilePaths = this.bundleGraph
         .getBundles()
-        .filter(bundle => bundle.type === 'html')
+        .filter(bundle => path.posix.extname(bundle.name) === '.html')
         .map(bundle => {
           return `/${relativePath(
             this.options.distDir,
@@ -193,21 +183,50 @@ export default class Server {
         });
 
       let indexFilePath = null;
+      let {pathname: reqURL} = url.parse(req.originalUrl || req.url);
+
+      if (!reqURL) {
+        reqURL = '/';
+      }
+
       if (htmlBundleFilePaths.length === 1) {
         indexFilePath = htmlBundleFilePaths[0];
       } else {
-        indexFilePath = htmlBundleFilePaths
-          .filter(v => {
-            let dir = path.posix.dirname(v);
-            let withoutExtension = path.posix.basename(
-              v,
-              path.posix.extname(v),
-            );
-            return withoutExtension === 'index' && req.url.startsWith(dir);
-          })
-          .sort((a, b) => {
-            return b.length - a.length;
-          })[0];
+        let bestMatch = null;
+        for (let bundle of htmlBundleFilePaths) {
+          let bundleDir = path.posix.dirname(bundle);
+          let bundleDirSubdir = bundleDir === '/' ? bundleDir : bundleDir + '/';
+          let withoutExtension = path.posix.basename(
+            bundle,
+            path.posix.extname(bundle),
+          );
+          let isIndex = withoutExtension === 'index';
+
+          let matchesIsIndex = null;
+          if (
+            isIndex &&
+            (reqURL.startsWith(bundleDirSubdir) || reqURL === bundleDir)
+          ) {
+            // bundle is /bar/index.html and (/bar or something inside of /bar/** was requested was requested)
+            matchesIsIndex = true;
+          } else if (reqURL == path.posix.join(bundleDir, withoutExtension)) {
+            // bundle is /bar/foo.html and /bar/foo was requested
+            matchesIsIndex = false;
+          }
+          if (matchesIsIndex != null) {
+            let depth = bundle.match(SLASH_REGEX)?.length ?? 0;
+            if (
+              bestMatch == null ||
+              // This one is more specific (deeper)
+              bestMatch.depth < depth ||
+              // This one is just as deep, but the bundle name matches and not just index.html
+              (bestMatch.depth === depth && bestMatch.isIndex)
+            ) {
+              bestMatch = {bundle, depth, isIndex: matchesIsIndex};
+            }
+          }
+        }
+        indexFilePath = bestMatch?.['bundle'] ?? htmlBundleFilePaths[0];
       }
 
       if (indexFilePath) {
@@ -324,11 +343,6 @@ export default class Server {
       return next(req, res);
     }
 
-    if (req.method === 'HEAD') {
-      res.end();
-      return;
-    }
-
     if (fresh(req.headers, {'last-modified': stat.mtime.toUTCString()})) {
       res.statusCode = 304;
       res.end();
@@ -386,32 +400,36 @@ export default class Server {
    */
   async applyProxyTable(app: any): Promise<Server> {
     // avoid skipping project root
-    const fileInRoot: string = path.join(this.options.projectRoot, '_');
+    const fileInRoot: string = path.join(this.options.projectRoot, 'index');
 
-    const pkg = await loadConfig(
+    const configFilePath = await resolveConfig(
       this.options.inputFS,
       fileInRoot,
-      ['.proxyrc.js', '.proxyrc', '.proxyrc.json'],
+      [
+        '.proxyrc.cts',
+        '.proxyrc.mts',
+        '.proxyrc.ts',
+        '.proxyrc.cjs',
+        '.proxyrc.mjs',
+        '.proxyrc.js',
+        '.proxyrc',
+        '.proxyrc.json',
+      ],
       this.options.projectRoot,
     );
 
-    if (!pkg || !pkg.config || !pkg.files) {
+    if (!configFilePath) {
       return this;
     }
 
-    const cfg = pkg.config;
-    const filename = path.basename(pkg.files[0].filePath);
+    const filename = path.basename(configFilePath);
 
-    if (filename === '.proxyrc.js') {
-      if (typeof cfg !== 'function') {
-        this.options.logger.warn({
-          message:
-            "Proxy configuration file '.proxyrc.js' should export a function. Skipping...",
-        });
+    if (filename === '.proxyrc' || filename === '.proxyrc.json') {
+      let conf = await readConfig(this.options.inputFS, configFilePath);
+      if (!conf) {
         return this;
       }
-      cfg(app);
-    } else if (filename === '.proxyrc' || filename === '.proxyrc.json') {
+      let cfg = conf.config;
       if (typeof cfg !== 'object') {
         this.options.logger.warn({
           message:
@@ -423,6 +441,25 @@ export default class Server {
         // each key is interpreted as context, and value as middleware options
         app.use(createProxyMiddleware(context, options));
       }
+    } else {
+      let cfg = await this.options.packageManager.require(
+        configFilePath,
+        fileInRoot,
+      );
+      if (
+        // $FlowFixMe
+        Object.prototype.toString.call(cfg) === '[object Module]'
+      ) {
+        cfg = cfg.default;
+      }
+
+      if (typeof cfg !== 'function') {
+        this.options.logger.warn({
+          message: `Proxy configuration file '${filename}' should export a function. Skipping...`,
+        });
+        return this;
+      }
+      cfg(app);
     }
 
     return this;
@@ -443,8 +480,24 @@ export default class Server {
     const app = connect();
     app.use((req, res, next) => {
       setHeaders(res);
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 200;
+        res.end();
+        return;
+      }
       next();
     });
+
+    app.use((req, res, next) => {
+      if (req.url === '/__parcel_healthcheck') {
+        res.statusCode = 200;
+        res.write(`${Date.now()}`);
+        res.end();
+      } else {
+        next();
+      }
+    });
+
     await this.applyProxyTable(app);
     app.use(finalHandler);
 

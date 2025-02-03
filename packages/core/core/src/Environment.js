@@ -5,14 +5,14 @@ import type {
   FilePath,
 } from '@parcel/types';
 import type {Environment, InternalSourceLocation} from './types';
-import {hashString} from '@parcel/hash';
+import {hashString} from '@parcel/rust';
 import {toInternalSourceLocation} from './utils';
 import PublicEnvironment from './public/Environment';
 import {environmentToInternalEnvironment} from './public/Environment';
 
 const DEFAULT_ENGINES = {
   browsers: ['> 0.25%'],
-  node: '>= 8.0.0',
+  node: '>= 18.0.0',
 };
 
 type EnvironmentOpts = {|
@@ -48,6 +48,7 @@ export function createEnvironment({
     switch (context) {
       case 'node':
       case 'electron-main':
+      case 'react-server':
         engines = {
           node: DEFAULT_ENGINES.node,
         };
@@ -56,6 +57,7 @@ export function createEnvironment({
       case 'web-worker':
       case 'service-worker':
       case 'electron-renderer':
+      case 'react-client':
         engines = {
           browsers: DEFAULT_ENGINES.browsers,
         };
@@ -86,6 +88,7 @@ export function createEnvironment({
       case 'node':
       case 'electron-main':
       case 'electron-renderer':
+      case 'react-server':
         outputFormat = 'commonjs';
         break;
       default:

@@ -25,6 +25,7 @@ const icons: SchemaEntity = {
 const actionProps = {
   // FF only
   browser_style: boolean,
+  chrome_style: boolean,
   // You can also have a raw string, but not in Edge, apparently...
   default_icon: {
     oneOf: [icons, string],
@@ -71,6 +72,16 @@ const warBase = {
     matches: arrStr,
     extension_ids: arrStr,
     use_dynamic_url: boolean,
+  },
+  additionalProperties: false,
+};
+
+const mv2Background = {
+  type: 'object',
+  properties: {
+    scripts: arrStr,
+    page: string,
+    persistent: boolean,
   },
   additionalProperties: false,
 };
@@ -174,6 +185,10 @@ const commonProps = {
           enum: ['document_idle', 'document_start', 'document_end'],
         },
         all_frames: boolean,
+        world: {
+          type: 'string',
+          enum: ['ISOLATED', 'MAIN'],
+        },
       },
       additionalProperties: false,
       required: ['matches'],
@@ -276,6 +291,7 @@ const commonProps = {
     type: 'object',
     properties: {
       browser_style: boolean,
+      chrome_style: boolean,
       open_in_tab: boolean,
       page: string,
     },
@@ -448,16 +464,25 @@ export const MV3Schema = ({
     },
     action: browserAction,
     background: {
-      type: 'object',
-      properties: {
-        service_worker: string,
-        type: {
-          type: 'string',
-          enum: ['classic', 'module'],
+      oneOf: [
+        {
+          type: 'object',
+          properties: {
+            service_worker: string,
+            type: {
+              type: 'string',
+              enum: ['classic', 'module'],
+            },
+            // to support both Chrome and Firefox
+            scripts: arrStr,
+            page: string,
+            persistent: boolean,
+          },
+          additionalProperties: false,
+          required: ['service_worker'],
         },
-      },
-      additionalProperties: false,
-      required: ['service_worker'],
+        mv2Background,
+      ], // for Firefox
     },
     content_security_policy: {
       type: 'object',
@@ -472,6 +497,13 @@ export const MV3Schema = ({
       type: 'object',
       properties: {
         pages: arrStr,
+      },
+      additionalProperties: false,
+    },
+    side_panel: {
+      type: 'object',
+      properties: {
+        default_path: string,
       },
       additionalProperties: false,
     },
@@ -502,15 +534,7 @@ export const MV2Schema = ({
       type: 'number',
       enum: [2],
     },
-    background: {
-      type: 'object',
-      properties: {
-        scripts: arrStr,
-        page: string,
-        persistent: boolean,
-      },
-      additionalProperties: false,
-    },
+    background: mv2Background,
     browser_action: browserAction,
     content_security_policy: string,
     page_action: {
