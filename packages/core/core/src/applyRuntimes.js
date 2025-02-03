@@ -9,6 +9,7 @@ import type {
   Bundle as InternalBundle,
   Config,
   DevDepRequest,
+  DevDepRequestRef,
   ParcelOptions,
 } from './types';
 import type ParcelConfig from './ParcelConfig';
@@ -59,7 +60,7 @@ export default async function applyRuntimes<TResult: RequestResult>({
   pluginOptions: PluginOptions,
   api: RunAPI<TResult>,
   previousDevDeps: Map<string, string>,
-  devDepRequests: Map<string, DevDepRequest>,
+  devDepRequests: Map<string, DevDepRequest | DevDepRequestRef>,
   configs: Map<string, Config>,
 |}): Promise<Map<string, Asset>> {
   let runtimes = await config.getRuntimes();

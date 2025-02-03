@@ -15,6 +15,7 @@ import type {
   TransformationRequest,
   Config,
   DevDepRequest,
+  DevDepRequestRef,
   ParcelOptions,
   InternalDevDepOptions,
   Invalidations,
@@ -89,13 +90,13 @@ export type TransformationResult = {|
   error?: Array<Diagnostic>,
   configRequests: Array<ConfigRequest>,
   invalidations: Invalidations,
-  devDepRequests: Array<DevDepRequest>,
+  devDepRequests: Array<DevDepRequest | DevDepRequestRef>,
 |};
 
 export default class Transformation {
   request: TransformationRequest;
   configs: Map<string, Config>;
-  devDepRequests: Map<string, DevDepRequest>;
+  devDepRequests: Map<string, DevDepRequest | DevDepRequestRef>;
   pluginDevDeps: Array<InternalDevDepOptions>;
   options: ParcelOptions;
   pluginOptions: PluginOptions;
