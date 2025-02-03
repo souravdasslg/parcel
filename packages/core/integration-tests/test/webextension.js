@@ -1,6 +1,6 @@
 import assert from 'assert';
 import path from 'path';
-import {bundle, assertBundles, outputFS, distDir} from '@parcel/test-utils';
+import {assertBundles, bundle, distDir, outputFS} from '@parcel/test-utils';
 
 describe('webextension', function () {
   it('should resolve a full webextension bundle', async function () {
@@ -86,7 +86,6 @@ describe('webextension', function () {
           'esmodule-helpers.js',
           'index-jsx.jsx',
           'index.js',
-          'index.js',
           'react.development.js',
         ],
       },
@@ -111,9 +110,11 @@ describe('webextension', function () {
         assets: ['manifest.json'],
       },
       {assets: ['background.js']},
+      {assets: ['background.js']},
       {assets: ['popup.html']},
       {assets: ['popup.css']},
-      {assets: ['popup.js', 'esmodule-helpers.js', 'bundle-url.js']},
+      {assets: ['popup.js', 'esmodule-helpers.js']},
+      {assets: ['side-panel.html']},
       {assets: ['content-script.js']},
       {assets: ['other-content-script.js']},
       {assets: ['injected.css']},
